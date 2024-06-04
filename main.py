@@ -14,11 +14,9 @@ app = FastAPI()
 # Setup basic logging
 logging.basicConfig(level=logging.INFO)
 
-# Configure the Tesseract path based on your operating system
-# Windows example:
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-# MacOS/Linux example (uncomment the appropriate line):
-# pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'  # Adjust if necessary
+# Configure the Tesseract path
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'  # Windows
+# pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'  # MacOS/Linux
 
 # Load the spaCy model for Named Entity Recognition
 nlp = spacy.load("en_core_web_sm")
@@ -45,7 +43,8 @@ def preprocess_image(image):
         image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+        thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 11, 2)
         return Image.fromarray(thresh)
     except Exception as e:
         logging.error(f"Error in preprocess_image: {e}")
@@ -54,11 +53,16 @@ def preprocess_image(image):
 def parse_details(text):
     try:
         doc = nlp(text)
+        doc = enhance_ner(doc)
         name = next((ent.text for ent in doc.ents if ent.label_ == "PERSON"), "Name not found")
+        company = next((ent.text for ent in doc.ents if ent.label_ == "ORG"), "Company not found")
+        address = next((ent.text for ent in doc.ents if ent.label_ == "GPE"), "Address not found")
         phone = extract_phone(text)
         email = extract_email(text)
         return {
             "name": name,
+            "company": company,
+            "address": address,
             "phone": phone,
             "email": email
         }
@@ -66,9 +70,13 @@ def parse_details(text):
         logging.error(f"Error in parse_details: {e}")
         raise
 
+def enhance_ner(doc):
+    # Additional custom rules or improvements can be added here
+    return doc
+
 def extract_phone(text):
     try:
-        phone_regex = r'\b\d{10}\b'
+        phone_regex = r'(\+?\d{1,3}?[-.\s]?\(?\d{1,3}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9})'
         phone_matches = re.findall(phone_regex, text)
         return phone_matches[0] if phone_matches else "Not found"
     except Exception as e:
